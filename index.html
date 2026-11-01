@@ -12,7 +12,6 @@
 </head>
 <body>
     
-    <div id="greeting-popup">Welcome Sunil Kumar 👋</div>
     <div id="toast-notification"></div>
 
     <div class="tab-container">
@@ -31,7 +30,6 @@
             <div id="monthlyBusiness" class="monthly-summary">
                 Monthly Business: 
                 <span id="monthlyBusinessValue">₹ 0</span> 
-                <span class="toggle-visibility" onclick="toggleBalanceVisibility('monthlyBusinessValue', this)">🙈</span>
             </div>
             <div id="monthlyTransactions" class="monthly-summary">Monthly Transactions: 0</div>
             </div>
@@ -80,7 +78,6 @@
                         <div class="current-balance" id="currentBalanceDisplay">
                             Current Balance: 
                             <span id="currentBalanceValue">₹ 0</span>
-                            <span class="toggle-visibility" onclick="toggleBalanceVisibility('currentBalanceValue', this)">🙈</span>
                         </div>
                     </div>
                 </div>
@@ -91,21 +88,17 @@
                 <input type="date" id="date-checker">
                 <button onclick="loadDataByDate()" class="save-button">Load Data</button>
                 <button id="back-to-today-btn" onclick="loadToday()" style="display: none;">Back to Today</button>
-                <button id="track-data-btn" class="import-button">Track Data</button>
+                <button id="track-data-btn" class="import-button">Statistics</button>
                 <div id="highest-business-display" onclick="loadHighestBusinessDate()">Highest Business: ₹ 0</div>
             </div>
             
             <div class="button-container">
                 <div class="button-group">
+                    <button class="export-button" onclick="toggleSettingsModal()">⚙️ Settings</button>
                     <button class="reset-button" id="reset-data-button" onclick="resetAllData()">Reset Log</button>
-                    <button class="export-button" onclick="exportAllData()">Export All</button>
-                    <button class="import-button" onclick="document.getElementById('import-file-input').click()">Import</button>
-                    <input type="file" id="import-file-input" style="display: none;" onchange="importData(event)" accept=".json">
                 </div>
                 <div class="button-group">
-                    <button class="report-button" onclick="showReportSelection()">Report</button>
                     <button class="save-button" id="save-data-button" onclick="saveData(true)">Save Data</button>
-                    <button class="copy-button" onclick="copyAllFilledRowsData()">Copy Data</button>
                 </div>
             </div>
             <table>
@@ -115,6 +108,23 @@
         </div>
     </div>
   
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="color: var(--primary-color); margin-top: 0;">Settings & Tools</h3>
+      <div class="modal-buttons" style="flex-direction: column; gap: 15px;">
+        <button class="report-button" onclick="showReportSelection(); toggleSettingsModal();">Report</button>
+        <button class="export-button" onclick="exportAllData()">Export All</button>
+        <button class="import-button" onclick="document.getElementById('import-file-input').click()">Import</button>
+        <button class="copy-button" onclick="copyAllFilledRowsData()">Copy Data</button>
+      </div>
+      <input type="file" id="import-file-input" style="display: none;" onchange="importData(event)" accept=".json">
+      <div class="modal-buttons" style="margin-top: 20px;">
+        <button id="settings-close-btn" class="reset-button" onclick="toggleSettingsModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="report-selection-overlay" class="modal-overlay">
     <div id="report-selection-box" class="modal-box">
       <p>Which report would you like to generate?</p>
@@ -146,22 +156,10 @@
     </div>
   </div>
   
-  <div id="id-details-modal" class="modal-overlay">
-      <div class="modal-box">
-          <h3 id="id-details-title" style="color: var(--primary-color); margin-top: 0; font-size: 1.5rem;">Transaction Details</h3>
-          <div id="id-details-summary" style="margin-bottom: 20px; font-size: 1.15rem; font-weight: 500;"></div>
-          <div class="modal-content" id="id-details-content" style="flex-grow: 1;">
-              </div>
-          <div class="modal-buttons">
-              <button id="id-details-close-btn">Close</button>
-          </div>
-      </div>
-  </div>
-
   <div id="track-data-modal" class="modal-overlay">
       <div class="modal-box" style="width: 95%; max-width: 1100px; height: 90vh; max-height: 90vh; display: flex; flex-direction: column;">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; margin-bottom: 20px;">
-              <h2 style="margin: 0; color: var(--primary-color); font-size: 1.6rem;">Data Tracker: AD / AC / TPD</h2>
+              <h2 style="margin: 0; color: var(--primary-color); font-size: 1.6rem;">Statistics: AD / AC / TPD</h2>
               <button id="track-data-close-btn" class="reset-button">BACK</button>
           </div>
 
