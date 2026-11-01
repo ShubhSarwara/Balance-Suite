@@ -1,951 +1,263 @@
-// ===============================================
-// START: TAB SYSTEM JAVASCRIPT
-// ===============================================
-function openTab(evt, tabName) {
-  const tabcontent = document.getElementsByClassName("tab-content");
-  for (let i = 0; i < tabcontent.length; i++) {
-      tabcontent[i].classList.remove("active");
-  }
-  const tablinks = document.getElementsByClassName("tab-link");
-  for (let i = 0; i < tablinks.length; i++) {
-      tablinks[i].classList.remove("active");
-  }
-  document.getElementById(tabName).classList.add("active");
-  evt.currentTarget.classList.add("active");
-}
-
-// ===============================================
-// START: NEW THEME SWITCHER
-// ===============================================
-const themes = ['vibrant-dark', 'deep-ocean', 'crimson-night', 'forest-haze', 'royal-purple'];
-let currentThemeIndex = 0;
-let isLightMode = false;
-
-function applyTheme(themeName) {
-    document.documentElement.setAttribute('data-theme', themeName);
-    localStorage.setItem('businessSuiteTheme', themeName);
-}
-
-function cycleTheme() {
-    playSound();
-    currentThemeIndex = (currentThemeIndex + 1) % themes.length;
-    const newTheme = themes[currentThemeIndex];
-    applyTheme(newTheme);
-    const themeName = newTheme.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-    showToast(`Theme: ${themeName}`);
-}
-
-function toggleLightDarkMode() {
-    playSound();
-    isLightMode = !isLightMode;
-    applyLightDarkMode(isLightMode);
-    showToast(isLightMode ? "Light Mode Enabled" : "Dark Mode Enabled");
-}
-
-function applyLightDarkMode(isLight) {
-    const toggleBtn = document.getElementById('theme-mode-toggle');
-    if (isLight) {
-        document.documentElement.setAttribute('data-theme-mode', 'light');
-        toggleBtn.textContent = '🌙'; 
-        localStorage.setItem('businessSuiteMode', 'light');
-    } else {
-        document.documentElement.removeAttribute('data-theme-mode');
-        toggleBtn.textContent = '☀️'; 
-        localStorage.setItem('businessSuiteMode', 'dark');
-    }
-}
-
-function loadTheme() {
-    const savedTheme = localStorage.getItem('businessSuiteTheme');
-    if (savedTheme && themes.includes(savedTheme)) {
-        currentThemeIndex = themes.indexOf(savedTheme);
-        applyTheme(savedTheme);
-    } else {
-        applyTheme(themes[0]);
-    }
-
-    const savedMode = localStorage.getItem('businessSuiteMode');
-    if (savedMode === 'light') {
-        isLightMode = true;
-        applyLightDarkMode(true);
-    } else {
-        isLightMode = false;
-        applyLightDarkMode(false);
-    }
-}
-
-// ===============================================
-// START: GITHUB CLOUD SYNC CONFIGURATION
-// ===============================================
-const GITHUB_USER = "Shubhamsarwara";
-const GITHUB_REPO = "Balance-Suite";
-const GITHUB_TOKEN = "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";
-
-async function saveToCloud() {
-    const allData = {};
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('balanceSheetData_') || key === 'highestDailyBusiness' || key === 'highestDailyBusinessDate') {
-            allData[key] = localStorage.getItem(key);
-        }
-    }
-    const contentEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(allData, null, 2))));
-    const filePath = "database.json";
-    const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${filePath}`;
-
-    try {
-        let sha = "";
-        const getRes = await fetch(url, {
-            headers: { "Authorization": `token ${GITHUB_TOKEN}` }
-        });
-        if (getRes.ok) {
-            const fileData = await getRes.json();
-            sha = fileData.sha;
-        }
-
-        const putRes = await fetch(url, {
-            method: "PUT",
-            headers: {
-                "Authorization": `token ${GITHUB_TOKEN}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: "Auto-sync database update",
-                content: contentEncoded,
-                sha: sha ? sha : undefined
-            })
-        });
-
-        if (putRes.ok) {
-            showToast("☁️ Synced with Cloud successfully!");
-        }
-    } catch (e) {
-        console.error("Cloud sync failed:", e);
-    }
-}
-
-async function loadFromCloud() {
-    const filePath = "database.json";
-    const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${filePath}`;
-
-    try {
-        const res = await fetch(url, {
-            headers: { "Authorization": `token ${GITHUB_TOKEN}` }
-        });
-        if (res.ok) {
-            const fileData = await res.json();
-            const decodedContent = decodeURIComponent(escape(atob(fileData.content)));
-            const parsedData = JSON.parse(decodedContent);
-
-            Object.keys(parsedData).forEach(key => {
-                localStorage.setItem(key, parsedData[key]);
-            });
-            showToast("📥 Data loaded from Cloud!");
-            loadDataByDate(true);
-        }
-    } catch (e) {
-        console.error("Failed to load from cloud:", e);
-    }
-}
-
-// ===============================================
-// START: NEW HELPERS
-// ===============================================
-let balanceVisibility = {
-    monthlyBusinessValue: false,
-    currentBalanceValue: false
-};
-
-function toggleBalanceVisibility(targetId, iconElement) {
-    playSound();
-    balanceVisibility[targetId] = !balanceVisibility[targetId];
-    const targetElement = document.getElementById(targetId);
-    const originalValue = targetElement.dataset.originalValue || '₹ 0';
-
-    if (balanceVisibility[targetId]) {
-        targetElement.textContent = originalValue;
-        iconElement.textContent = '👁️';
-        targetElement.classList.remove('is-hidden');
-    } else {
-        targetElement.dataset.originalValue = originalValue;
-        targetElement.textContent = '∗∗∗∗∗∗∗';
-        iconElement.textContent = '🙈';
-        targetElement.classList.add('is-hidden');
-    }
-}
-
-function updateMaskableBalance(targetId, newValue) {
-    const targetElement = document.getElementById(targetId);
-    if (!targetElement) return;
-    targetElement.dataset.originalValue = newValue;
-    if (balanceVisibility[targetId]) {
-        targetElement.textContent = newValue;
-    } else {
-        targetElement.textContent = '∗∗∗∗∗∗∗';
-    }
-}
-
-// ===============================================
-// START: BALANCE SHEET JAVASCRIPT
-// ===============================================
-const tableBody = document.getElementById("tableBody");
-const MAX_ROWS = 200; 
-let displayedRows = 0;
-let currentlyDisplayedDate = new Date();
-let lastMilestoneReached = 0;
-let monthlyAlertsShown = {};
-let currentHighCountResults = []; 
-const HIGHEST_BUSINESS_KEY = 'highestDailyBusiness';
-const HIGHEST_BUSINESS_DATE_KEY = 'highestDailyBusinessDate'; 
-const SOUND_URL = "https://cdn.pixabay.com/audio/2022/10/18/audio_82c6b4125a.mp3"; 
-
-function playSound() {
-  try {
-      const audio = new Audio(SOUND_URL);
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-          playPromise.catch(error => console.error("Audio play failed:", error));
-      }
-  } catch (e) {
-      console.error("Could not play sound:", e);
-  }
-}
-
-function toggleSearch() {
-  playSound();
-  const searchContainer = document.getElementById('search-container');
-  if (searchContainer.style.display === 'block') {
-      clearSearch();
-  } else {
-      clearReportResults();
-      searchContainer.style.display = 'block';
-      document.getElementById('search-input').focus();
-  }
-}
-
-function displaySearchResults(results, summaryText) {
-  const resultsContainer = document.getElementById('search-results');
-  const summaryContainer = document.getElementById('search-results-summary');
-  document.getElementById('main-content').style.display = 'none';
-  resultsContainer.innerHTML = ''; 
-  if (results.length > 0) {
-      let tableHTML = '<table><thead><tr><th>Date</th><th>ID No.</th><th>P Type</th><th>Amount</th></tr></thead><tbody>';
-      results.forEach(t => {
-          const amountClass = (t.id.startsWith('AC') || t.id.startsWith('BW') || t.id.startsWith('TAC')) ? 'text-red' : 'text-green';
-          tableHTML += `<tr><td>${t.date}</td><td class="${amountClass}">${t.id}</td><td>${t.ptype}</td><td class="${amountClass}">₹ ${formatBalance(t.amount)}</td></tr>`;
-      });
-      tableHTML += '</tbody></table>';
-      resultsContainer.innerHTML = tableHTML;
-      summaryContainer.innerHTML = summaryText;
-  } else {
-      resultsContainer.innerHTML = '<p style="text-align:center;">No transactions found matching your criteria.</p>';
-      summaryContainer.innerHTML = '';
-  }
-}
-
-function getSelectedFilters(yearFilterId, monthFilterId) {
-    const year = document.getElementById(yearFilterId).value;
-    const month = document.getElementById(monthFilterId).value;
-    return { year, month };
-}
-
-function performIdSearch() {
-  playSound();
-  const query = document.getElementById('search-input').value.trim().toUpperCase();
-  if (!query) { showToast("Please enter an ID to search."); return; }
-  const { year: yearFilter, month: monthFilter } = getSelectedFilters('search-year-filter', 'search-month-filter');
-  const typeFilter = document.getElementById('search-type-filter').value;
-  let results = []; let totalAmount = 0;
+/* --- THEME: VIBRANT DARK (MODERNIZED) --- */
+:root {
+  --body-bg: #0f172a;
+  --header-bg: #1e293b;
+  --row-odd-bg: #1e293b;
+  --row-even-bg: #0f172a;
+  --border-color: #334155;
+  --text-color: #f8fafc;
+  --secondary-color: #94a3b8;
+  --input-bg: #334155;
+  --input-readonly-bg: #1e293b;
+  --hr-color: #334155;
+  --toast-bg: #f8fafc;
+  --toast-text: #0f172a;
+  --button-text-light: #ffffff;
+  --button-text-dark: #ffffff;
+  --theme-font-family: 'Montserrat', sans-serif;
+  --border-radius-base: 10px;
+  --border-radius-lg: 16px;
   
-  for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('balanceSheetData_')) {
-          const datePart = key.substring(17);
-          const keyYear = datePart.substring(0, 4);
-          const keyMonth = datePart.substring(5, 7);
-          if (yearFilter !== 'all' && keyYear !== yearFilter) continue;
-          if (monthFilter !== 'all' && keyMonth !== monthFilter) continue;
-          
-          const data = JSON.parse(localStorage.getItem(key));
-          data.forEach(t => {
-              const idNo = (t[2] || '').toUpperCase();
-              if (idNo && idNo.includes(query)) {
-                  if (typeFilter === 'AD' && !(idNo.startsWith('AD') || idNo.startsWith('ABD'))) return;
-                  if (typeFilter === 'AC' && !idNo.startsWith('AC')) return;
-                  
-                  const amount = parseFloat((t[4] || '0').replace(/,/g, ''));
-                  results.push({ date: datePart, id: t[2], ptype: t[3], amount: isNaN(amount) ? 0 : amount });
-                  if (!isNaN(amount) && !idNo.startsWith('BW') && !idNo.startsWith('BD')) totalAmount += amount;
-              }
-          });
-      }
-  }
-  results.sort((a, b) => a.date.localeCompare(b.date));
-  const summary = `Found <span>${results.length}</span> transactions. Total Business: <span>₹ ${formatBalance(totalAmount)}</span>`;
-  displaySearchResults(results, summary);
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --green-text: #10b981;
+  --red-text: #ef4444;
+  --shadow-color: rgba(59, 130, 246, 0.3);
+  --export-bg: #10b981;
+  --import-bg: #3b82f6;
+  --save-color: #f59e0b;
+  --reset-color: #ef4444;
+  --copy-color: #64748b;
+  --report-color: #14b8a6;
+  --frequency-color: #8b5cf6;
+  --save-btn-text: #ffffff;
+  --report-btn-text: #ffffff;
+  --frequency-btn-text: #ffffff;
+  --highest-business-color: var(--green-text);
 }
 
-function performAmountSearch() {
-  playSound();
-  const query = document.getElementById('search-input').value.trim();
-  const queryAmount = parseFloat(query.replace(/,/g, ''));
-  if (isNaN(queryAmount)) { showToast("Please enter a valid amount to search."); return; }
-  const { year: yearFilter, month: monthFilter } = getSelectedFilters('search-year-filter', 'search-month-filter');
-  const typeFilter = document.getElementById('search-type-filter').value;
-  let results = []; let totalAmount = 0;
-
-  for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('balanceSheetData_')) {
-          const datePart = key.substring(17);
-          const keyYear = datePart.substring(0, 4);
-          const keyMonth = datePart.substring(5, 7);
-          if (yearFilter !== 'all' && keyYear !== yearFilter) continue;
-          if (monthFilter !== 'all' && keyMonth !== monthFilter) continue;
-
-          const data = JSON.parse(localStorage.getItem(key));
-          data.forEach(t => {
-              const transactionAmount = parseFloat((t[4] || '0').replace(/,/g, ''));
-              if (transactionAmount === queryAmount) {
-                  const idNo = (t[2] || '').toUpperCase();
-                  if (typeFilter === 'AD' && !(idNo.startsWith('AD') || idNo.startsWith('ABD'))) return;
-                  if (typeFilter === 'AC' && !idNo.startsWith('AC')) return;
-
-                  results.push({ date: datePart, id: t[2], ptype: t[3], amount: transactionAmount });
-                  totalAmount += transactionAmount;
-              }
-          });
-      }
-  }
-  const summary = `Found <span>${results.length}</span> transactions for amount <span>₹ ${formatBalance(queryAmount)}</span>. Total: <span>₹ ${formatBalance(totalAmount)}</span>`;
-  displaySearchResults(results, summary);
+html[data-theme-mode="light"] {
+  --body-bg: #f8fafc;
+  --header-bg: #ffffff;
+  --row-odd-bg: #f1f5f9;
+  --row-even-bg: #ffffff;
+  --border-color: #e2e8f0;
+  --text-color: #334155;
+  --secondary-color: #64748b;
+  --input-bg: #ffffff;
+  --input-readonly-bg: #f1f5f9;
+  --hr-color: #cbd5e1;
+  --toast-bg: #1e293b;
+  --toast-text: #ffffff;
+  --green-text: #059669; 
+  --red-text: #dc2626;  
+  --shadow-color: rgba(59, 130, 246, 0.15);
 }
 
-function clearSearch() {
-  playSound();
-  document.getElementById('search-input').value = '';
-  document.getElementById('search-results').innerHTML = '';
-  document.getElementById('search-results-summary').innerHTML = '';
-  document.getElementById('search-container').style.display = 'none';
-  document.getElementById('main-content').style.display = 'block';
+html[data-theme="deep-ocean"] {
+  --primary-color: #06b6d4;     
+  --green-text: #34d399;         
+  --red-text: #fb7185;           
+  --shadow-color: rgba(6, 182, 212, 0.3);
+  --export-bg: #0d9488;         
+  --import-bg: #0ea5e9;         
+  --save-color: #eab308;         
+  --reset-color: #f43f5e;        
+  --copy-color: #94a3b8;
+  --report-color: #059669;       
+  --frequency-color: #6366f1;       
 }
 
-function clearReportResults() {
-  playSound();
-  document.getElementById('report-results-container').style.display = 'none';
-  document.getElementById('main-content').style.display = 'block';
-  currentHighCountResults = [];
+html[data-theme="crimson-night"] {
+  --primary-color: #f43f5e;     
+  --green-text: #6ee7b7;         
+  --red-text: #f87171;           
+  --shadow-color: rgba(244, 63, 94, 0.3);
+  --export-bg: #ec4899;         
+  --import-bg: #a855f7;         
+  --save-color: #f97316;         
+  --reset-color: #9f1239;        
+  --copy-color: #64748b;
+  --report-color: #be123c;       
+  --frequency-color: #7e22ce;       
+  --highest-business-color: #fde047; 
 }
 
-function updateHighestBusinessDisplay() {
-  const highestBusiness = parseFloat(localStorage.getItem(HIGHEST_BUSINESS_KEY)) || 0;
-  const displayEl = document.getElementById('highest-business-display');
-  if (displayEl) { displayEl.textContent = `Highest Business: ₹ ${formatBalance(highestBusiness)}`; }
+html[data-theme="forest-haze"] {
+  --primary-color: #84cc16;     
+  --green-text: #84cc16;         
+  --red-text: #f97316;           
+  --shadow-color: rgba(132, 204, 22, 0.3);
+  --export-bg: #22c55e;         
+  --import-bg: #14b8a6;         
+  --save-color: #eab308;         
+  --reset-color: #ea580c;        
+  --copy-color: #a8a29e;         
+  --report-color: #4d7c0f;       
+  --frequency-color: #78350f;       
 }
 
-function loadHighestBusinessDate() {
-  const dateStr = localStorage.getItem(HIGHEST_BUSINESS_DATE_KEY);
-  if (!dateStr) {
-      showToast("No highest business date recorded.");
-      return;
-  }
-  playSound();
-  document.getElementById('date-checker').value = dateStr;
-  loadDataByDate();
-  document.getElementById('back-to-today-btn').style.display = 'inline-block';
-  showToast(`Loading log for high score date: ${dateStr}`);
+html[data-theme="royal-purple"] {
+  --primary-color: #a855f7;     
+  --green-text: #a3e635;         
+  --red-text: #f472b6;           
+  --shadow-color: rgba(168, 85, 247, 0.3);
+  --export-bg: #8b5cf6;         
+  --import-bg: #6366f1;         
+  --save-color: #fde047;         
+  --reset-color: #e11d48;        
+  --copy-color: #94a3b8;
+  --report-color: #7c3aed;       
+  --frequency-color: #db2777;       
+  --highest-business-color: #a3e635;
 }
 
-function loadToday() {
-  playSound();
-  document.getElementById('date-checker').value = '';
-  loadDataByDate(true);
-  document.getElementById('back-to-today-btn').style.display = 'none';
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--body-bg); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--secondary-color); }
+
+html { font-size: 16px; }
+body {
+  font-family: var(--theme-font-family); 
+  padding: 2% 5%; 
+  background: var(--body-bg); 
+  color: var(--text-color); 
+  line-height: 1.6;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  margin: 0;
+  min-height: 100vh;
 }
 
-function calculateAndSetInitialHighestBusiness() {
-  let maxBusiness = 0;
-  let maxDateKey = ''; 
-  for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('balanceSheetData_')) {
-          let dailyBusiness = 0;
-          const dataStr = localStorage.getItem(key);
-          if (dataStr) {
-              try {
-                  JSON.parse(dataStr).forEach(transaction => {
-                      const idNo = (transaction[2] || '').toUpperCase();
-                      if (idNo.trim() && !idNo.startsWith('BD') && !idNo.startsWith('BW')) {
-                          const amountVal = (transaction[4] || '').replace(/,/g, '');
-                          const amount = parseFloat(amountVal);
-                          if (!isNaN(amount)) { dailyBusiness += amount; }
-                      }
-                  });
-              } catch (e) { console.error(`Could not parse data for key ${key}:`, e); }
-          }
-          if (dailyBusiness > maxBusiness) {
-              maxBusiness = dailyBusiness;
-              maxDateKey = key;
-          }
-      }
-  }
-  localStorage.setItem(HIGHEST_BUSINESS_KEY, maxBusiness);
-  if (maxDateKey) {
-      localStorage.setItem(HIGHEST_BUSINESS_DATE_KEY, maxDateKey.substring(17));
-  }
-  updateHighestBusinessDisplay();
+.tab-container { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 25px; }
+.tab-link {
+    padding: 12px 25px; cursor: pointer; border: none; background-color: transparent;
+    color: var(--secondary-color); font-size: 1.1rem; font-weight: 600;
+    transition: all 0.3s ease; border-bottom: 3px solid transparent; margin-bottom: -2px; 
+}
+.tab-link.active { color: var(--primary-color); border-bottom: 3px solid var(--primary-color); font-weight: 700; }
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: fadeIn 0.4s ease forwards; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-function getStorageKey(date) { const d = date.getDate().toString().padStart(2, '0'); const m = (date.getMonth() + 1).toString().padStart(2, '0'); const y = date.getFullYear(); return `balanceSheetData_${y}-${m}-${d}`; }
-
-function updateDateDisplay() { 
-  const today = new Date(); 
-  const isToday = currentlyDisplayedDate.toDateString() === today.toDateString(); 
-  document.getElementById("currentDateDisplay").textContent = "DATE: " + currentlyDisplayedDate.toLocaleDateString("en-IN"); 
-  document.getElementById('reset-data-button').textContent = `Reset Log`; 
-  document.getElementById('businessLabel').textContent = isToday ? "Total Business:" : "Daily Business:"; 
-  document.getElementById('save-data-button').style.display = 'inline-block';
+button {
+    font-family: var(--theme-font-family);
+    padding: 10px 20px; font-size: 0.9rem; border: none; 
+    border-radius: var(--border-radius-base); cursor: pointer; 
+    transition: all 0.2s ease; font-weight: 600; letter-spacing: 0.5px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
+button:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+button:active { transform: translateY(1px); }
 
-function formatBalance(num) { 
-    if (num === null || String(num).trim() === '') return '';
-    const parsed = parseFloat(String(num).replace(/,/g, ''));
-    if (isNaN(parsed)) return '';
-    return parsed.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+.save-button { background-color: var(--save-color); color: var(--save-btn-text); }
+.report-button { background-color: var(--report-color); color: var(--report-btn-text); width: 100%; }
+.copy-button { background-color: var(--copy-color); color: var(--button-text-light); width: 100%; }
+.reset-button { background-color: var(--reset-color); color: var(--button-text-light); }
+.export-button { background-color: var(--export-bg); color: var(--button-text-light); }
+.import-button { background-color: var(--import-bg); color: var(--button-text-light); width: 100%; }
+
+.top-bar { 
+    display: flex; justify-content: space-between; align-items: center; 
+    margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;
 }
-
-function showToast(message) { 
-  const toast = document.getElementById("toast-notification"); 
-  toast.textContent = message; 
-  toast.classList.add("show"); 
-  playSound();
-  setTimeout(() => { toast.classList.remove("show"); }, 4000); 
+.icon-group { display: flex; align-items: center; gap: 20px; }
+.icon-container { 
+    font-size: 1.5rem; user-select: none; color: var(--secondary-color); 
+    cursor: pointer; transition: all 0.2s ease; background: var(--header-bg); 
+    width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; border: 1px solid var(--border-color);
 }
+.icon-container:hover { color: var(--primary-color); transform: translateY(-2px); }
 
-function updateSerialNumbers() { 
-    let serial = 0; 
-    document.querySelectorAll("#tableBody tr").forEach((row) => {
-        const idInput = row.querySelector('input[data-col="2"]');
-        const serialInput = row.querySelector('input[data-col="1"]');
-        const idValue = idInput ? idInput.value.trim().toUpperCase() : '';
-        const idPrefix = idValue.substring(0, 2);
+.date-summary-group { text-align: right; }
+.date { font-size: 1.2rem; font-weight: 700; color: var(--secondary-color); }
+.monthly-summary { font-size: 1.05rem; font-weight: 600; margin-top: 5px; }
 
-        if (idInput && idValue !== '' && idPrefix !== 'BW' && idPrefix !== 'BD') {
-            serialInput.value = ++serial;
-        } else {
-            serialInput.value = '';
-        }
-    });
+.summary-container, #search-container, #report-results-container, .date-checker-container {
+    padding: 20px; background-color: var(--header-bg); border: 1px solid var(--border-color); 
+    border-radius: var(--border-radius-lg); margin-bottom: 25px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
+#search-container, #report-results-container { display: none; }
+#search-controls, .date-checker-container { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; }
 
-function updateColumnStyles(tr) { 
-    const pTypeInput = tr.querySelector('input[data-col="3"]'); 
-    const amountInput = tr.querySelector('input[data-col="4"]'); 
-    const idInput = tr.querySelector('input[data-col="2"]'); 
-    const idNo = idInput ? idInput.value.toUpperCase() : ''; 
-    const idPrefix = idNo.substring(0, 2); 
-    
-    pTypeInput?.classList.remove('text-green', 'text-red'); 
-    amountInput?.classList.remove('text-green', 'text-red'); 
-    
-    if (idPrefix === 'AD' || idPrefix === 'BD' || idNo.startsWith('ABD')) { 
-        pTypeInput?.classList.add('text-green'); 
-        amountInput?.classList.add('text-green'); 
-    } 
-    else if (idPrefix === 'AC' || idPrefix === 'BW' || idNo.startsWith('TAC')) { 
-        pTypeInput?.classList.add('text-red'); 
-        amountInput?.classList.add('text-red'); 
-    } 
+input[type="text"], input[type="date"], select {
+    padding: 10px 14px; border-radius: var(--border-radius-base); 
+    border: 1px solid var(--border-color); background-color: var(--input-bg); 
+    color: var(--text-color); font-family: inherit; font-size: 1rem;
 }
-
-function calculateDailyTotals() {
-  let dailyBusiness = 0;
-  const rows = document.querySelectorAll("#tableBody tr");
-  rows.forEach(row => {
-      const idNo = row.querySelector('input[data-col="2"]').value.toUpperCase();
-      const amountVal = row.querySelector('input[data-col="4"]').value.replace(/,/g, '');
-      const amount = parseFloat(amountVal);
-      const idPrefix = idNo.substring(0, 2);
-      if (!isNaN(amount) && idPrefix !== 'BD' && idPrefix !== 'BW' && idNo.trim()) {
-          dailyBusiness += amount;
-      }
-  });
-
-  document.getElementById("totalBusinessValue").textContent = `₹ ${formatBalance(dailyBusiness)}`;
-
-  let lastBalance = '0';
-  const firstRowBalance = rows.length > 0 ? rows[0].querySelector('input[data-col="0"]').value : '';
-  if (firstRowBalance.trim() === '') {
-      lastBalance = '0';
-  } else {
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const input = rows[i].querySelector('input[data-col="0"]');
-      if (input && input.value.trim() !== '') {
-          lastBalance = input.value;
-          break;
-      }
-    }
-  }
-  updateMaskableBalance("currentBalanceValue", `₹ ${lastBalance}`);
-  
-  const today = new Date();
-  if (currentlyDisplayedDate.toDateString() === today.toDateString()) {
-      const currentLakh = Math.floor(dailyBusiness / 100000);
-      if (currentLakh > 0 && currentLakh > lastMilestoneReached) {
-          lastMilestoneReached = currentLakh;
-          showToast(`🎉 Milestone Reached: ₹${formatBalance(lastMilestoneReached * 100000)} in business!`);
-      } else if (currentLakh < lastMilestoneReached) {
-          lastMilestoneReached = currentLakh;
-      }
-  }
+input[type="text"]:focus, input[type="date"]:focus, select:focus {
+    border-color: var(--primary-color); outline: none;
 }
+#search-input { flex-grow: 1; min-width: 250px; }
 
-function updateMonthlySummary() { 
-    const year = currentlyDisplayedDate.getFullYear(); 
-    const month = currentlyDisplayedDate.getMonth(); 
-    let monthlyTotalBusiness = 0; 
-    let monthlyTotalTransactions = 0; 
-    const daysInMonth = new Date(year, month + 1, 0).getDate(); 
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month, day); 
-        const key = getStorageKey(date); 
-        const dataStr = localStorage.getItem(key);
-        if (dataStr) {
-            try {
-                JSON.parse(dataStr).forEach(transaction => {
-                    const idNo = (transaction[2] || '').toUpperCase().trim();
-                    if (idNo) {
-                        const idPrefix = idNo.substring(0, 2); 
-                        if (idPrefix !== 'BD' && idPrefix !== 'BW') { 
-                            monthlyTotalTransactions++; 
-                            const amount = parseFloat((transaction[4] || '0').replace(/,/g, '')); 
-                            if (!isNaN(amount)) { 
-                                monthlyTotalBusiness += amount;
-                            } 
-                        } 
-                    }
-                });
-            } catch(e) {}
-        }
-    }
-    updateMaskableBalance('monthlyBusinessValue', `₹ ${formatBalance(monthlyTotalBusiness)}`);
-    document.getElementById('monthlyTransactions').textContent = `Monthly Transactions: ${monthlyTotalTransactions.toLocaleString('en-IN')}`;
+.summary-main { text-align: left; width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.total-business, .current-balance { font-size: 1.4rem; font-weight: 700; }
+
+#highest-business-display { 
+    margin-left: auto; padding: 10px 20px; font-size: 1.1rem; font-weight: 700; 
+    color: var(--highest-business-color); background-color: rgba(16, 185, 129, 0.1); 
+    border-radius: 30px; border: 1px solid var(--highest-business-color); cursor: pointer;
+} 
+
+.button-container { margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap; }
+.button-group { display: flex; gap: 12px; flex-wrap: wrap;}
+
+table { 
+    width: 100%; border-collapse: separate; border-spacing: 0; 
+    background: var(--header-bg); border-radius: var(--border-radius-lg); 
+    overflow: hidden; border: 1px solid var(--border-color);
 }
-
-function checkAndNotifyForMilestone(idNo) { 
-    if (!idNo) return; 
-    const idPrefix = idNo.substring(0, 2).toUpperCase(); 
-    const idNumberPart = idNo.replace(/\D/g, ''); 
-    if (!idNumberPart || !(idPrefix === 'AC' || idPrefix === 'AD' || idNo.toUpperCase().startsWith('ABD'))) { return; } 
-    const year = currentlyDisplayedDate.getFullYear(); 
-    const month = currentlyDisplayedDate.getMonth(); 
-    const alertKey = `${year}-${month}-${idNumberPart}`; 
-    if (monthlyAlertsShown[alertKey]) { return; } 
-    const monthKeyPrefix = `balanceSheetData_${year}-${(month + 1).toString().padStart(2, '0')}`; 
-    let count = 0; 
-    for (let i = 0; i < localStorage.length; i++) { 
-        const key = localStorage.key(i); 
-        if (key && key.startsWith(monthKeyPrefix)) { 
-            const data = JSON.parse(localStorage.getItem(key) || '[]'); 
-            data.forEach(t => { 
-                const transactionId = (t[2] || '').trim().toUpperCase(); 
-                if (transactionId.replace(/\D/g, '') === idNumberPart) { count++; } 
-            }); 
-        } 
-    } 
-    if (count === 10) { showToast('This ID completed 10 transactions.'); monthlyAlertsShown[alertKey] = true; } 
+th, td { border: none; padding: 12px 15px; text-align: center; font-size: 0.95rem; border-bottom: 1px solid var(--border-color); }
+thead th { 
+    background-color: var(--header-bg); font-weight: 700; color: var(--secondary-color); 
+    text-transform: uppercase; font-size: 0.85rem; padding-top: 18px; padding-bottom: 18px;
 }
+tbody tr:nth-child(even) { background-color: var(--row-even-bg); }
+tbody tr:nth-child(odd) { background-color: var(--row-odd-bg); }
 
-function updateCalculations(idToCheck = null) { 
-    calculateBalances(); 
-    updateSerialNumbers(); 
-    calculateDailyTotals(); 
-    saveData(false); 
-    if (idToCheck) { checkAndNotifyForMilestone(idToCheck); } 
+td input { 
+    width: 100%; padding: 10px; text-align: center; border: 1px solid transparent; 
+    border-radius: var(--border-radius-base); box-sizing: border-box; font-family: inherit; 
+    font-size: 1rem; font-weight: 500; background-color: rgba(255, 255, 255, 0.03); 
+    color: var(--text-color); 
 }
+td input:focus { border-color: var(--primary-color); background-color: var(--input-bg); outline: none; }
+input:read-only { color: var(--secondary-color); background-color: transparent !important; }
 
-function calculateBalances() { 
-    const rows = document.querySelectorAll("#tableBody tr"); 
-    if (rows.length === 0) return; 
-    const firstInput = rows[0].querySelector("input[data-col='0']"); 
-    let balance = parseFloat(firstInput.value.trim().replace(/,/g, '')); 
-    if (isNaN(balance)) { 
-        for (let i = 1; i < rows.length; i++) { rows[i].querySelector("input[data-col='0']").value = ''; } 
-        return; 
-    } 
-    firstInput.value = formatBalance(balance); 
-    
-    for (let i = 0; i < rows.length - 1; i++) { 
-        const currentRow = rows[i]; 
-        const nextRow = rows[i + 1]; 
-        const idNo = currentRow.querySelector('input[data-col="2"]').value.toUpperCase(); 
-        const amountVal = currentRow.querySelector('input[data-col="4"]').value.replace(/,/g, ''); 
-        const amount = parseFloat(amountVal); 
-        const currentBalVal = currentRow.querySelector("input[data-col='0']").value.replace(/,/g, ''); 
-        const currentBal = parseFloat(currentBalVal); 
-        const idPrefix = idNo.substring(0, 2); 
-        const nextBalanceInput = nextRow.querySelector("input[data-col='0']"); 
-        
-        if (!isNaN(amount) && !isNaN(currentBal) && idNo) { 
-            let newBalance = currentBal; 
-            if (idPrefix === 'AD' || idPrefix === 'BD' || idNo.startsWith('ABD')) { 
-                newBalance += amount; 
-            } 
-            else if (idPrefix === 'AC' || idPrefix === 'BW' || idNo.startsWith('TAC')) { 
-                newBalance -= amount; 
-            } 
-            
-            if (newBalance < 0) { 
-                showToast(`CRITICAL ERROR: Balance negative at row ${i + 1}. Transaction invalid.`); 
-                currentRow.querySelector('input[data-col="2"]').value = ''; 
-                currentRow.querySelector('input[data-col="3"]').value = ''; 
-                currentRow.querySelector('input[data-col="4"]').value = ''; 
-                updateColumnStyles(currentRow); 
-                calculateBalances(); 
-                return; 
-            } 
-            nextBalanceInput.value = formatBalance(newBalance); 
-        } else { 
-            for (let j = i + 1; j < rows.length; j++) { rows[j].querySelector("input[data-col='0']").value = ''; } 
-            break; 
-        } 
-    } 
+.text-green { color: var(--green-text) !important; font-weight: 700; }
+.text-red { color: var(--red-text) !important; font-weight: 700; }
+
+#toast-notification { 
+    visibility: hidden; min-width: 250px; background-color: var(--toast-bg); 
+    color: var(--toast-text); text-align: center; border-radius: 30px; 
+    padding: 14px 24px; position: fixed; z-index: 1000; left: 50%; top: 30px; 
+    transform: translateX(-50%) translateY(-20px); font-size: 1rem; font-weight: 600; opacity: 0; 
+    transition: all 0.4s ease; 
 }
+#toast-notification.show { visibility: visible; opacity: 1; transform: translateX(-50%) translateY(0); }
 
-function createRow(index) { 
-    const tr = document.createElement('tr'); 
-    for (let i = 0; i < 5; i++) { 
-        const td = document.createElement('td'); 
-        const input = document.createElement('input'); 
-        input.setAttribute('data-row', index); 
-        input.setAttribute('data-col', i); 
-        if ((i === 0 && index !== 0) || i === 1 || i === 3) { 
-            input.readOnly = true; 
-            input.setAttribute('tabindex', '-1'); 
-        } 
-        input.addEventListener('input', (e) => { 
-            const rowIndex = parseInt(e.target.dataset.row, 10);
-            if (rowIndex === displayedRows - 1 && displayedRows < MAX_ROWS) {
-                tableBody.appendChild(createRow(displayedRows));
-                displayedRows++;
-            }
-            
-            if (i === 2) { 
-                const pTypeInput = tr.querySelector('input[data-col="3"]'); 
-                let value = e.target.value.toUpperCase(); 
-                let prefix = '', numbers = ''; 
-                
-                if (value.startsWith('TAC')) {
-                    prefix = 'TAC';
-                    numbers = value.substring(3).replace(/\D/g, '').slice(0, 4);
-                } 
-                else if (value.startsWith('ABD')) { 
-                    prefix = 'ABD'; numbers = value.substring(3).replace(/\D/g, '').slice(0, 4); 
-                } else { 
-                    const first2 = value.substring(0, 2); 
-                    if (['AD', 'AC', 'BD', 'BW'].includes(first2)) { 
-                        prefix = first2; numbers = value.substring(2).replace(/\D/g, '').slice(0, 4); 
-                    } else { 
-                        e.target.value = value.replace(/[^A-Z]/g, '').substring(0, 3); 
-                        pTypeInput.value = ''; 
-                        updateColumnStyles(tr); 
-                        updateCalculations(); 
-                        return; 
-                    } 
-                } 
-                e.target.value = prefix + (numbers ? ' ' + numbers : ''); 
-                const pType = pTypeInput; 
-                
-                if (prefix === 'TAC') pType.value = 'TPD'; 
-                else if (prefix === 'AD' || prefix === 'ABD') pType.value = 'W'; 
-                else if (prefix === 'AC') pType.value = 'D'; 
-                else if (prefix === 'BD') pType.value = 'BD'; 
-                else if (prefix === 'BW') pType.value = 'BW'; 
-                
-                updateColumnStyles(tr); 
-            } 
-            if (i === 4 || i === 0) { 
-                e.target.value = formatBalance(e.target.value); 
-            } 
-            updateCalculations(i === 2 ? e.target.value : null); 
-        }); 
-        input.addEventListener('keydown', e => { 
-            const row = parseInt(input.dataset.row, 10); 
-            const col = parseInt(input.dataset.col, 10); 
-            if (e.key === 'Tab') { 
-                if (col === 2) { 
-                    e.preventDefault(); 
-                    document.querySelector(`input[data-row="${row}"][data-col="4"]`)?.focus(); 
-                } else if (col === 4 && row < MAX_ROWS - 1) { 
-                    e.preventDefault(); 
-                    document.querySelector(`input[data-row="${row + 1}"][data-col="2"]`)?.focus(); 
-                } 
-            } 
-            if (e.key === 'Enter' && (col === 2 || col === 4) && row < MAX_ROWS - 1) { 
-                e.preventDefault(); 
-                document.querySelector(`input[data-row="${row + 1}"][data-col="${col}"]`)?.focus(); 
-            } 
-        }); 
-        td.appendChild(input); 
-        tr.appendChild(td); 
-    } 
-    return tr; 
+.modal-overlay { 
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+    background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px);
+    display: none; justify-content: center; align-items: center; z-index: 200; 
 }
-
-function fillRows() { 
-    tableBody.innerHTML = ''; 
-    const initialRows = 5;
-    for (let i = 0; i < initialRows; i++) { 
-        tableBody.appendChild(createRow(i)); 
-    } 
-    displayedRows = initialRows;
+.modal-box { 
+    background-color: var(--header-bg); padding: 35px; 
+    border-radius: var(--border-radius-lg); text-align: center; 
+    border: 1px solid var(--border-color); max-width: 90%; width: 500px; max-height: 90vh; display: flex; flex-direction: column; 
 }
+.modal-content { overflow-y: auto; padding-right: 10px; }
+.modal-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: auto; padding-top: 25px; }
 
-function getCurrentTableData() { return Array.from(document.querySelectorAll("#tableBody tr")).map(row => Array.from({ length: 5 }, (_, col) => row.querySelector(`input[data-col="${col}"]`).value)); }
+#currentBalanceValue, #monthlyBusinessValue { color: var(--green-text) !important; }
+#currentDateDisplay, #monthlyTransactions { color: var(--secondary-color) !important; }
 
-function setCurrentTableData(data) {
-    let lastFilledRowIndex = -1;
-    for (let i = data.length - 1; i >= 0; i--) {
-        const row = data[i]; 
-        if ((row[2] && row[2].trim()) || (row[4] && row[4].trim())) {
-            lastFilledRowIndex = i;
-            break;
-        }
-    }
-    
-    const rowsToShow = Math.min(MAX_ROWS, Math.max(5, lastFilledRowIndex + 2));
-    if (rowsToShow > displayedRows) {
-        for (let i = displayedRows; i < rowsToShow; i++) {
-            tableBody.appendChild(createRow(i));
-        }
-        displayedRows = rowsToShow;
-    }
-    
-    data.forEach((rowData, i) => { 
-        if (i >= displayedRows) return; 
-        let row = tableBody.querySelector(`tr:nth-child(${i + 1})`); 
-        if (!row) return; 
-        rowData.forEach((cellData, col) => { 
-            row.querySelector(`input[data-col="${col}"]`).value = cellData || ''; 
-        }); 
-        updateColumnStyles(row); 
-    }); 
-    updateCalculations(); 
-}
-
-function saveData(showMsg = true) { 
-    const key = getStorageKey(currentlyDisplayedDate); 
-    const tableData = getCurrentTableData(); 
-    localStorage.setItem(key, JSON.stringify(tableData)); 
-    
-    let currentDayBusiness = 0; 
-    tableData.forEach(transaction => { 
-        const idNo = (transaction[2] || '').toUpperCase(); 
-        if (idNo.trim() && !idNo.startsWith('BD') && !idNo.startsWith('BW')) { 
-            const amountVal = (transaction[4] || '0').replace(/,/g, ''); 
-            const amount = parseFloat(amountVal); 
-            if (!isNaN(amount)) { currentDayBusiness += amount; } 
-        } 
-    }); 
-    const storedHighest = parseFloat(localStorage.getItem(HIGHEST_BUSINESS_KEY)) || 0; 
-    if (currentDayBusiness > storedHighest) { 
-        localStorage.setItem(HIGHEST_BUSINESS_KEY, currentDayBusiness); 
-        localStorage.setItem(HIGHEST_BUSINESS_DATE_KEY, key.substring(17)); 
-        updateHighestBusinessDisplay(); 
-        showToast(`🎉 New High Score! Daily Business: ₹ ${formatBalance(currentDayBusiness)}`); 
-    } 
-    
-    // Auto Save to Cloud via GitHub API
-    saveToCloud();
-
-    if (showMsg) { 
-        playSound(); 
-        showToast("Log Saved & Synced!"); 
-    } 
-    updateMonthlySummary(); 
-}
-
-function copyAllFilledRowsData() { 
-    playSound(); 
-    const rows = Array.from(document.querySelectorAll("#tableBody tr")).map(row => [1, 2, 3, 4].map(col => row.querySelector(`input[data-col="${col}"]`).value.trim())).filter(rowArr => rowArr.some(val => val !== '')).map(rowArr => rowArr.join('\t')); 
-    if (rows.length === 0) return showToast("No data to copy!"); 
-    navigator.clipboard.writeText(rows.join('\n')); 
-    showToast("Copied to clipboard!"); 
-}
-
-function showCustomConfirm(message, onConfirm) {
-  const overlay = document.getElementById('custom-confirm-overlay');
-  const msgElement = document.getElementById('custom-confirm-message');
-  const yesButton = document.getElementById('confirm-yes');
-  const noButton = document.getElementById('confirm-no');
-  msgElement.textContent = message;
-  const newYesButton = yesButton.cloneNode(true);
-  yesButton.parentNode.replaceChild(newYesButton, yesButton);
-
-  newYesButton.onclick = () => {
-      playSound();
-      overlay.style.display = 'none';
-      if (typeof onConfirm === 'function') { onConfirm(); }
-  };
-  noButton.onclick = () => {
-      playSound();
-      overlay.style.display = 'none';
-  };
-  overlay.style.display = 'flex';
-}
-
-function resetAllData() {
-  const message = `Are you sure you want to reset the log for ${currentlyDisplayedDate.toLocaleDateString("en-IN")}? This cannot be undone.`;
-  showCustomConfirm(message, () => {
-      fillRows();
-      saveData(false);
-      updateCalculations();
-      showToast('Log has been reset.');
-  });
-}
-
-function exportAllData() { 
-    playSound(); 
-    let allData = {}; 
-    for (let i = 0; i < localStorage.length; i++) { 
-        const key = localStorage.key(i); 
-        if (key?.startsWith('balanceSheetData_')) { allData[key] = localStorage.getItem(key); } 
-    } 
-    const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' }); 
-    let a = document.createElement('a'); 
-    a.href = URL.createObjectURL(blob); 
-    a.download = `balancesheet_export_${new Date().toISOString().slice(0, 10)}.json`; 
-    a.click(); 
-    a.remove(); 
-    showToast("All data exported!"); 
-}
-
-function importData(event) { 
-    const file = event.target.files[0]; 
-    if (!file) return; 
-    const reader = new FileReader(); 
-    reader.onload = function (e) { 
-        try { 
-            const content = JSON.parse(e.target.result); 
-            if (typeof content !== 'object') throw "Invalid format"; 
-            let importCount = 0; 
-            Object.keys(content).forEach(key => { 
-                if (key.startsWith('balanceSheetData_')) { 
-                    localStorage.setItem(key, content[key]); 
-                    importCount++; 
-                } 
-            }); 
-            playSound(); 
-            showToast(`${importCount} logs imported successfully!`); 
-            calculateAndSetInitialHighestBusiness(); 
-            loadDataByDate(true); 
-            saveToCloud();
-        } catch (err) { showToast("Import error: " + err); } 
-    }; 
-    reader.readAsText(file); 
-    event.target.value = ""; 
-}
-
-function getClosingBalanceFromData(data) {
-    if (!data || data.length === 0) return '0';
-    for (let i = data.length - 1; i >= 0; i--) {
-        const rowData = data[i];
-        const balance = rowData[0];
-        if (balance && String(balance).trim() !== '') { return String(balance); }
-    }
-    return '0';
-}
-
-function loadDataByDate(forceToday = false) {
-    playSound();
-    const val = document.getElementById('date-checker').value;
-    const dateToLoad = forceToday ? new Date() : (val ? new Date(val) : new Date());
-    const timezoneOffset = dateToLoad.getTimezoneOffset() * 60000;
-    currentlyDisplayedDate = new Date(dateToLoad.getTime() + timezoneOffset);
-
-    const today = new Date();
-    if (currentlyDisplayedDate.toDateString() === today.toDateString()) {
-        document.getElementById('back-to-today-btn').style.display = 'none';
-        document.getElementById('date-checker').value = ''; 
-    }
-    
-    fillRows(); 
-    const storageKey = getStorageKey(currentlyDisplayedDate);
-    const dataStr = localStorage.getItem(storageKey);
-
-    if (dataStr) {
-        setCurrentTableData(JSON.parse(dataStr)); 
-    } else {
-        const prevDate = new Date(currentlyDisplayedDate);
-        prevDate.setDate(prevDate.getDate() - 1);
-        const prevStorageKey = getStorageKey(prevDate);
-        const prevDataStr = localStorage.getItem(prevStorageKey);
-
-        if (prevDataStr) {
-            try {
-                const prevData = JSON.parse(prevDataStr);
-                const closingBalance = getClosingBalanceFromData(prevData);
-                const firstBalanceInput = tableBody.querySelector('input[data-row="0"][data-col="0"]');
-                if (firstBalanceInput) { firstBalanceInput.value = closingBalance; }
-            } catch (e) {}
-        } else {
-            const firstBalanceInput = tableBody.querySelector('input[data-row="0"][data-col="0"]');
-            if (firstBalanceInput) { firstBalanceInput.value = '21,950'; }
-        }
-        updateCalculations();
-    }
-    updateDateDisplay();
-    updateMonthlySummary();
-}
-
-// PDF Generators & Other UI functions remain same
-function createStyledPDF() { 
-    if (typeof jspdf === 'undefined') { showToast('PDF library not loaded.'); return null; } 
-    return new jspdf.jsPDF(); 
-}
-
-function populateStaticFilters(yearFilterId, monthFilterId) {
-  const yearFilter = document.getElementById(yearFilterId);
-  const monthFilter = document.getElementById(monthFilterId);
-  yearFilter.innerHTML = '<option value="all">All Years</option>';
-  monthFilter.innerHTML = '<option value="all">All Months</option>';
-
-  for (let year = 2025; year <= 2050; year++) {
-      const option = document.createElement('option');
-      option.value = year;
-      option.textContent = year;
-      yearFilter.appendChild(option);
-  }
-
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  for (let i = 0; i < monthNames.length; i++) {
-      const option = document.createElement('option');
-      option.value = (i + 1).toString().padStart(2, '0');
-      option.textContent = monthNames[i];
-      monthFilter.appendChild(option);
-  }
-}
-
-window.addEventListener('DOMContentLoaded', async () => {
-  const greetingPopup = document.getElementById('greeting-popup');
-  if (greetingPopup) {
-      greetingPopup.classList.add('show');
-      setTimeout(() => { greetingPopup.classList.remove('show'); }, 2500);
-  }
-  
-  document.querySelectorAll('.modal-overlay').forEach(overlay => {
-      overlay.addEventListener('click', (e) => {
-          if(e.target === overlay) { overlay.style.display = 'none'; }
-      });
-  });
-
-  loadTheme();
-  populateStaticFilters('search-year-filter', 'search-month-filter');
-  
-  // Pehle Cloud se latest data download karega phir screen par load karega
-  await loadFromCloud();
-
-  calculateAndSetInitialHighestBusiness();
-  loadDataByDate(true);
-});
+.track-list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border-color); font-size: 0.95rem; }
+.track-card { flex: 1; background-color: var(--row-even-bg); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: 20px; display: flex; flex-direction: column; }
+.track-card h3 { text-align: center; color: var(--text-color); border-bottom: 2px solid var(--border-color); padding-bottom: 15px; margin-top: 0; }
